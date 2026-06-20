@@ -10,6 +10,7 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
+
 /* ================= MIDDLEWARE ================= */
 
 app.use(
@@ -46,7 +47,7 @@ const verifyToken = (req, res, next) => {
   } catch (err) {
     return res.status(401).send({ message: "Invalid Token" });
   }
-};
+}; 
 
 /* ================= CONNECT DB ================= */
 
@@ -63,7 +64,7 @@ async function run() {
     /* ================= ROOT ================= */
 
     app.get("/", (req, res) => {
-      res.send("MediCare Connect Server Running");
+      res.send("MediCare Connect Connect Server Running"); 
     });
 
     /* ================= AUTH (simple demo) ================= */
