@@ -53,7 +53,7 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     db = client.db("medicareconnect");
 
     const usersCollection = db.collection("users");
