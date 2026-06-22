@@ -10,7 +10,6 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-
 /* ================= MIDDLEWARE ================= */
 
 app.use(
@@ -26,9 +25,14 @@ app.use(cookieParser());
 /* ================= DB ================= */
 
 const client = new MongoClient(process.env.MONGODB_URI);
-let db;
 
-/* ================= AUTH MIDDLEWARE ================= */
+let usersCollection;
+let doctorsCollection;
+let appointmentsCollection;
+let reviewsCollection;
+let paymentsCollection;
+
+/* ================= AUTH ================= */
 
 const verifyToken = (req, res, next) => {
   try {
@@ -37,185 +41,425 @@ const verifyToken = (req, res, next) => {
       req.headers.authorization?.split(" ")[1];
 
     if (!token) {
-      return res.status(401).send({ message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
     req.user = decoded;
 
     next();
-  } catch (err) {
-    return res.status(401).send({ message: "Invalid Token" });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token",
+    });
   }
-}; 
+};
 
-/* ================= CONNECT DB ================= */
+const verifyRole = (role) => {
+  return (req, res, next) => {
+    if (req.user.role !== role) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    next();
+  };
+};
+
+/* ================= DATABASE ================= */
 
 async function run() {
   try {
-    // await client.connect();
-    db = client.db("medicareconnect");
+    await client.connect();
 
-    const usersCollection = db.collection("users");
-    const doctorsCollection = db.collection("doctors");
-    const appointmentsCollection = db.collection("appointments");
-    const reviewsCollection = db.collection("reviews");
+    const db = client.db("medicareconnect");
+
+    usersCollection = db.collection("users");
+    doctorsCollection = db.collection("doctors");
+    appointmentsCollection = db.collection("appointments");
+    reviewsCollection = db.collection("reviews");
+    paymentsCollection = db.collection("payments");
+
+    console.log("MongoDB Connected");
 
     /* ================= ROOT ================= */
 
     app.get("/", (req, res) => {
-      res.send("MediCare Connect Connect Server Running"); 
+      res.json({
+        success: true,
+        message: "MediCare API Running",
+      });
     });
 
-    /* ================= AUTH (simple demo) ================= */
+    /* ================= USERS ================= */
+
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+
+        const existingUser =
+          await usersCollection.findOne({
+            email: user.email,
+          });
+
+        if (existingUser) {
+          return res.json({
+            success: true,
+            message: "User already exists",
+          });
+        }
+
+        const result =
+          await usersCollection.insertOne({
+            ...user,
+            role: user.role || "patient",
+            createdAt: new Date(),
+          });
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "User creation failed",
+        });
+      }
+    });
+
+    /* ================= LOGIN ================= */
 
     app.post("/auth/login", async (req, res) => {
-      const user = req.body;
+      try {
+        const { email, password } = req.body;
 
-      const token = jwt.sign(
-        {
-          email: user.email,
-          role: user.role || "patient",
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
+        const user =
+          await usersCollection.findOne({
+            email,
+          });
 
-      res
-        .cookie("token", token, {
+        if (!user || user.password !== password) {
+          return res.status(401).json({
+            success: false,
+            message: "Invalid credentials",
+          });
+        }
+
+        const token = jwt.sign(
+          {
+            email: user.email,
+            role: user.role,
+          },
+          process.env.JWT_SECRET,
+          {
+            expiresIn: "7d",
+          }
+        );
+
+        res.cookie("token", token, {
           httpOnly: true,
-          secure: false,
-        })
-        .send({ success: true, token });
+          secure:
+            process.env.NODE_ENV === "production",
+          sameSite:
+            process.env.NODE_ENV === "production"
+              ? "none"
+              : "lax",
+        });
+
+        res.json({
+          success: true,
+          token,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "Login failed",
+        });
+      }
+    });
+
+    /* ================= PROFILE ================= */
+
+    app.get("/me", verifyToken, async (req, res) => {
+      const user =
+        await usersCollection.findOne({
+          email: req.user.email,
+        });
+
+      res.json(user || {});
+    });
+
+    app.patch("/me", verifyToken, async (req, res) => {
+      const result =
+        await usersCollection.updateOne(
+          {
+            email: req.user.email,
+          },
+          {
+            $set: req.body,
+          }
+        );
+
+      res.json({
+        success: true,
+        data: result,
+      });
     });
 
     /* ================= DOCTORS ================= */
 
     app.get("/doctors", async (req, res) => {
       try {
-        const { search, sort, page = 1, limit = 10 } = req.query;
+        const {
+          search,
+          sort,
+          page = 1,
+          limit = 10,
+        } = req.query;
 
         let query = {};
 
         if (search) {
-          query.specialty = { $regex: search, $options: "i" };
+          query.$or = [
+            {
+              doctorName: {
+                $regex: search,
+                $options: "i",
+              },
+            },
+            {
+              specialization: {
+                $regex: search,
+                $options: "i",
+              },
+            },
+          ];
         }
 
         let sortOption = {};
-        if (sort === "fee") sortOption = { fee: 1 };
-        if (sort === "experience") sortOption = { experience: -1 };
-        if (sort === "rating") sortOption = { rating: -1 };
 
-        const result = await doctorsCollection
-          .find(query)
-          .sort(sortOption)
-          .skip((parseInt(page) - 1) * parseInt(limit))
-          .limit(parseInt(limit))
-          .toArray();
+        if (sort === "fee")
+          sortOption = {
+            consultationFee: 1,
+          };
 
-        res.send(result);
-      } catch (err) {
-        res.status(500).send({ message: "Failed to fetch doctors" });
-      }
-    });
+        if (sort === "experience")
+          sortOption = {
+            experience: -1,
+          };
 
-    app.get("/doctors/:id", async (req, res) => {
-      try {
-        const result = await doctorsCollection.findOne({
-          _id: new ObjectId(req.params.id),
+        if (sort === "rating")
+          sortOption = {
+            rating: -1,
+          };
+
+        const doctors =
+          await doctorsCollection
+            .find(query)
+            .sort(sortOption)
+            .skip(
+              (parseInt(page) - 1) *
+                parseInt(limit)
+            )
+            .limit(parseInt(limit))
+            .toArray();
+
+        res.json(doctors);
+      } catch (error) {
+        res.status(500).json({
+          success: false,
         });
-
-        res.send(result);
-      } catch (err) {
-        res.status(500).send({ message: "Doctor not found" });
       }
-    });
-
-    app.get("/featured-doctors", async (req, res) => {
-      const result = await doctorsCollection
-        .find()
-        .sort({ rating: -1 })
-        .limit(3)
-        .toArray();
-
-      res.send(result);
     });
 
     /* ================= APPOINTMENTS ================= */
 
-    app.post("/appointments", verifyToken, async (req, res) => {
-      const result = await appointmentsCollection.insertOne({
-        ...req.body,
-        status: "pending",
-        createdAt: new Date(),
-      });
+    app.get(
+      "/appointments",
+      verifyToken,
+      async (req, res) => {
+        const appointments =
+          await appointmentsCollection
+            .find({
+              patientEmail: req.user.email,
+            })
+            .toArray();
 
-      res.send({
-        success: true,
-        insertedId: result.insertedId,
-      });
-    });
+        res.json(appointments);
+      }
+    );
 
-    app.get("/appointments", async (req, res) => {
-      const email = req.query.email;
+    app.post(
+      "/appointments",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await appointmentsCollection.insertOne({
+            ...req.body,
+            patientEmail: req.user.email,
+            status: "pending",
+            createdAt: new Date(),
+          });
 
-      const result = await appointmentsCollection
-        .find({ userEmail: email })
-        .toArray();
+        res.json(result);
+      }
+    );
 
-      res.send(result);
-    });
+    app.patch(
+      "/appointments/:id",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await appointmentsCollection.updateOne(
+            {
+              _id: new ObjectId(
+                req.params.id
+              ),
+            },
+            {
+              $set: req.body,
+            }
+          );
 
-    app.patch("/appointments/:id", async (req, res) => {
-      const result = await appointmentsCollection.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        { $set: req.body }
-      );
+        res.json(result);
+      }
+    );
 
-      res.send(result);
-    });
+    app.delete(
+      "/appointments/:id",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await appointmentsCollection.deleteOne({
+            _id: new ObjectId(
+              req.params.id
+            ),
+          });
 
-    app.delete("/appointments/:id", async (req, res) => {
-      const result = await appointmentsCollection.deleteOne({
-        _id: new ObjectId(req.params.id),
-      });
-
-      res.send(result);
-    });
-
-    /* ================= USERS ================= */
-
-    app.patch("/users/:email", async (req, res) => {
-      const result = await usersCollection.updateOne(
-        { email: req.params.email },
-        { $set: req.body }
-      );
-
-      res.send(result);
-    });
+        res.json(result);
+      }
+    );
 
     /* ================= REVIEWS ================= */
 
-    app.post("/reviews", verifyToken, async (req, res) => {
-      const result = await reviewsCollection.insertOne({
-        ...req.body,
-        createdAt: new Date(),
-      });
+    app.post(
+      "/reviews",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await reviewsCollection.insertOne({
+            ...req.body,
+            patientEmail: req.user.email,
+            createdAt: new Date(),
+          });
 
-      res.send(result);
-    });
+        res.json(result);
+      }
+    );
 
-    app.get("/reviews/:doctorId", async (req, res) => {
-      const result = await reviewsCollection
-        .find({ doctorId: req.params.doctorId })
-        .toArray();
+    app.get(
+      "/reviews/me",
+      verifyToken,
+      async (req, res) => {
+        const reviews =
+          await reviewsCollection
+            .find({
+              patientEmail:
+                req.user.email,
+            })
+            .toArray();
 
-      res.send(result);
-    });
+        res.json(reviews);
+      }
+    );
 
-    console.log("MongoDB Connected Successfully");
-  } catch (err) {
-    console.log(err);
+    app.delete(
+      "/reviews/:id",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await reviewsCollection.deleteOne({
+            _id: new ObjectId(
+              req.params.id
+            ),
+          });
+
+        res.json(result);
+      }
+    );
+
+    /* ================= PAYMENTS ================= */
+
+    app.get(
+      "/payments",
+      verifyToken,
+      async (req, res) => {
+        const payments =
+          await paymentsCollection
+            .find({
+              patientEmail:
+                req.user.email,
+            })
+            .toArray();
+
+        res.json(payments);
+      }
+    );
+
+    app.post(
+      "/payments",
+      verifyToken,
+      async (req, res) => {
+        const result =
+          await paymentsCollection.insertOne({
+            ...req.body,
+            patientEmail:
+              req.user.email,
+            createdAt: new Date(),
+          });
+
+        res.json(result);
+      }
+    );
+
+    /* ================= ADMIN ================= */
+
+    app.patch(
+      "/doctors/verify/:id",
+      verifyToken,
+      verifyRole("admin"),
+      async (req, res) => {
+        const result =
+          await doctorsCollection.updateOne(
+            {
+              _id: new ObjectId(
+                req.params.id
+              ),
+            },
+            {
+              $set: {
+                verificationStatus:
+                  "verified",
+              },
+            }
+          );
+
+        res.json(result);
+      }
+    );
+  } catch (error) {
+    console.error("DB Error:", error);
   }
 }
 
@@ -224,5 +468,7 @@ run();
 /* ================= SERVER ================= */
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(
+    `Server running on port ${port}`
+  );
 });
