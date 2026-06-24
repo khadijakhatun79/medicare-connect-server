@@ -61,6 +61,7 @@ async function run() {
   try {
     await client.connect();
     const db = client.db("medicareconnect");
+   
 
     usersCollection = db.collection("users");
     doctorsCollection = db.collection("doctors");
@@ -70,6 +71,51 @@ async function run() {
     prescriptionsCollection = db.collection("prescriptions");
 
     console.log("✅ MongoDB Connected");
+
+    /* ================= FEATURED DOCTORS ================= */
+app.get("/featured-doctors", async (req, res) => {
+  try {
+    const allDoctors = await doctorsCollection.find({}).toArray();
+
+    console.log("ALL DOCTORS:", allDoctors);
+
+    const featuredDoctors = await doctorsCollection
+      .find({
+        verificationStatus: {
+          $regex: /^verified$/i,
+        },
+      })
+      .limit(6)
+      .toArray();
+
+    console.log("FEATURED DOCTORS:", featuredDoctors);
+
+    res.status(200).json(featuredDoctors);
+  } catch (error) {
+    console.error("Featured Doctors Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch featured doctors",
+    });
+  }
+});
+
+/* ================= DEBUG DOCTORS ================= */
+app.get("/debug-doctors", async (req, res) => {
+  try {
+    const doctors = await doctorsCollection.find({}).toArray();
+
+    res.status(200).json({
+      total: doctors.length,
+      doctors,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Debug error",
+    });
+  }
+});
 
 /* ================= ROOT ================= */
 app.get("/", (req, res) => {
@@ -259,13 +305,32 @@ app.get("/prescriptions", verifyToken, async (req, res) => {
 });
 
   } catch (err) {
-    console.error("DB Error:", err);
+    console.error("DB Error:", err); 
   }
 }
 
 run();
 
+
+/* ================= FEATURED DOCTORS ================= */
+app.get("/featured-doctors", async (req, res) => {
+  try {
+    const result = await doctorsCollection
+      .find({
+        verificationStatus: "verified",
+      })
+      .limit(6)
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to fetch featured doctors",
+    });
+  }
+});
+
 /* ================= SERVER ================= */
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`); 
+  console.log(`Server running on port ${port}`);  
 });
