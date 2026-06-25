@@ -1005,17 +1005,22 @@ app.patch(
 
 run();
 /* ================= FEATURED DOCTORS ================= */
-app.get("/featured-doctors", async (req, res) => {
+/* ================= FEATURED DOCTORS ================= */
+app.get("/doctors", async (req, res) => {
   try {
     const result = await doctorsCollection
       .find({
-        verificationStatus: "Verified"
+        verificationStatus: {
+          $in: ["verified", "Verified"],
+        },
       })
       .limit(6)
       .toArray();
 
     res.send(result);
   } catch (error) {
+    console.error(error);
+
     res.status(500).send({
       message: "Failed to fetch featured doctors",
     });
