@@ -37,20 +37,37 @@ let prescriptionsCollection;
 
 /* ================= AUTH ================= */
 const verifyToken = (req, res, next) => {
+  console.log("Cookies:", req.cookies);
+  console.log("Authorization:", req.headers.authorization);
+
   const token =
     req.cookies?.token ||
     req.headers.authorization?.split(" ")[1];
 
+  console.log("Token:", token);
+
   if (!token) {
-    return res.status(401).send({ message: "Unauthorized" });
+    return res.status(401).send({
+      message: "Unauthorized - No Token",
+    });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
+    console.log("Decoded:", decoded);
+
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(401).send({ message: "Invalid Token" });
+    console.log("JWT Error:", err.message);
+
+    return res.status(401).send({
+      message: "Invalid Token",
+    });
   }
 };
 
