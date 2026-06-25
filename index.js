@@ -326,9 +326,9 @@ app.get("/doctors", async (req, res) => {
   res.send(doctors);
 });
 
-/* ================= ADMIN DOCTORS ================= */
+/* ================= ADMIN DOCTORS ================= */ 
 
-app.get(
+app.get( 
   "/admin/doctors",
   verifyToken,
   verifyRole("admin"),
@@ -374,8 +374,6 @@ app.post("/doctors", verifyToken, async (req, res) => {
 
   res.send(result);
 });
-
-
 
 app.get("/doctors/:id", async (req, res) => {
   try {
@@ -1006,8 +1004,6 @@ app.patch(
 }
 
 run();
-
-
 /* ================= FEATURED DOCTORS ================= */
 app.get("/featured-doctors", async (req, res) => {
   try {
