@@ -18,7 +18,12 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cookieParser());
 
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  })
+);
 
 /* ================= DB ================= */
 const client = new MongoClient(process.env.MONGODB_URI);
