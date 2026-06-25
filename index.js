@@ -210,9 +210,10 @@ app.post("/auth/login", async (req, res) => {
   );
 
   res.cookie("token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-  });
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+});
 
   res.send({ token });
 });
