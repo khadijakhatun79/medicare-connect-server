@@ -65,7 +65,7 @@ const verifyRole = (role) => (req, res, next) => {
 /* ================= CONNECT DB ================= */
 async function run() {
   try {
-    await client.connect();
+    //await client.connect();
     const db = client.db("medicareconnect");
    
 
@@ -320,7 +320,7 @@ app.get(
   }
 );
 
-/* ================= DOCTORS ================= */
+/* ================= DOCTORS ================= */ 
 app.get("/doctors", async (req, res) => {
   const doctors = await doctorsCollection.find().toArray();
   res.send(doctors);
