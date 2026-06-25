@@ -260,6 +260,34 @@ app.get("/patient/profile", verifyToken, async (req, res) => {
 
   res.send(patient);
 });
+
+app.get("/admin/analytics", async (req, res) => {
+  const totalPatients = await usersCollection.countDocuments({
+    role: "patient",
+  });
+
+  const totalDoctors = await usersCollection.countDocuments({
+    role: "doctor",
+  });
+
+  const totalAppointments =
+    await appointmentsCollection.countDocuments();
+
+  const payments =
+    await paymentsCollection.find().toArray(); 
+
+  const revenue = payments.reduce(
+    (sum, item) => sum + (item.amount || 0),
+    0
+  );
+
+  res.send({
+    totalPatients,
+    totalDoctors,
+    totalAppointments,
+    revenue,
+  });
+});
 /* ================= PROFILE ================= */
 app.get("/me", verifyToken, async (req, res) => {
   const user = await usersCollection.findOne({ email: req.user.email });
