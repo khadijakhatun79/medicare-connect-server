@@ -267,17 +267,6 @@ app.get("/users/:email", async (req, res) => {
   }
 });
 
-app.get("/patient/profile", verifyToken, async (req, res) => {
-  console.log("DECODED TOKEN:", req.user);
-
-  const patient = await usersCollection.findOne({
-    email: req.user.email,
-  });
-
-  console.log("FOUND USER:", patient?.email);
-
-  res.send(patient);
-});
 
 app.get("/admin/analytics", async (req, res) => {
   const totalPatients = await usersCollection.countDocuments({
@@ -359,7 +348,7 @@ app.get(
       data: doctors,
     });
   }
-);
+);   
 
 app.patch(
   "/admin/doctors/:id/verify",
@@ -384,13 +373,48 @@ app.patch(
   }
 );
 
-app.post("/doctors", verifyToken, async (req, res) => {
-  const result = await doctorsCollection.insertOne({
-    ...req.body,
-    verificationStatus: "Pending",
-  });
+app.post("/doctors", async (req, res) => {
+  try {
+    const doctor = {
+      doctorName: req.body.doctorName,
+      email: req.body.email,
+      specialization: req.body.specialization || "",
+      qualifications: req.body.qualifications || [],
+      experience: Number(req.body.experience) || 0,
+      consultationFee: Number(req.body.consultationFee) || 0,
+      hospitalName: req.body.hospitalName || "",
+      profileImage: req.body.profileImage || "",
+      availableDays: [],
+      availableSlots: [],
+      verificationStatus: "Pending",
+      rating: 0,
+      totalReviews: 0,
+      createdAt: new Date(),
+    };
 
-  res.send(result);
+    const exists = await doctorsCollection.findOne({
+      email: doctor.email,
+    });
+
+    if (exists) {
+      return res.status(400).send({
+        message: "Doctor profile already exists",
+      });
+    }
+
+    const result = await doctorsCollection.insertOne(doctor);
+
+    res.send({
+      success: true,
+      insertedId: result.insertedId,
+    });
+  } catch (err) {
+    console.log(err);
+
+    res.status(500).send({
+      message: err.message,
+    });
+  }
 });
 
 app.get("/doctors/:id", async (req, res) => {
@@ -655,7 +679,7 @@ app.get(
 /* ================= DOCTOR APPOINTMENTS ================= */
 
 app.get(
-  "/doctor/appointments",
+  "/doctors/appointments",
   verifyToken,
   verifyRole("doctor"),
   async (req, res) => {
@@ -690,7 +714,7 @@ app.patch(
 );
 
 app.post(
-  "/doctor/prescriptions",  
+  "/doctors/prescriptions",  
   verifyToken,
   verifyRole("doctor"),
   async (req, res) => {
@@ -724,22 +748,76 @@ app.get(
     res.send(prescriptions);
   }
 );
+
+app.put(
+  "/doctors/profile",
+  verifyToken,
+  verifyRole("doctor"),
+  async (req, res) => {
+    try {
+      const result = await doctorsCollection.updateOne(
+        {
+          email: req.user.email,
+        },
+        {
+          $set: req.body,
+        },
+        {
+          upsert: true,
+        }
+      );
+
+      res.send({
+        success: true,
+        modifiedCount: result.modifiedCount,
+        upsertedId: result.upsertedId,
+      });
+    } catch (error) {
+      res.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+
 app.get(
   "/doctor/profile",
   verifyToken,
   verifyRole("doctor"),
   async (req, res) => {
-    const doctor =
-      await doctorsCollection.findOne({
+    try {
+      console.log("User:", req.user);
+
+      const doctor = await doctorsCollection.findOne({
         email: req.user.email,
       });
 
-    res.send(doctor);
+      console.log("Doctor:", doctor);
+
+      if (!doctor) {
+        return res.status(404).send({
+          message: "Doctor profile not found",
+        });
+      }
+
+      res.send({
+        success: true,
+        data: doctor,
+      });
+    } catch (error) {
+      console.error("ERROR:", error);
+
+      res.status(500).send({
+        message: error.message,
+      });
+    }
   }
 );
 
 app.get(
-  "/patient/profile",
+  "/patient/profile", 
   verifyToken,
   async (req, res) => {
     const patient =
@@ -864,7 +942,7 @@ app.get(
 );
 
 app.get(
-  "/doctor/stats",
+  "/doctors/stats",
   verifyToken,
   verifyRole("doctor"),
   async (req, res) => {
@@ -1022,28 +1100,6 @@ app.patch(
 }
 
 run();
-/* ================= FEATURED DOCTORS ================= */
-/* ================= FEATURED DOCTORS ================= */
-app.get("/doctors", async (req, res) => {
-  try {
-    const result = await doctorsCollection
-      .find({
-        verificationStatus: {
-          $in: ["verified", "Verified"],
-        },
-      })
-      .limit(6)
-      .toArray();
-
-    res.send(result);
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).send({
-      message: "Failed to fetch featured doctors",
-    });
-  }
-});
 
 /* ================= SERVER ================= */
 app.listen(port, () => {
